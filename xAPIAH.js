@@ -620,10 +620,10 @@ var AH;
 			if(result.hasOwnProperty("more") && result.more != ""){
 				//there are more results. Go fetch them
 				var moreCallback = this.makeVotesCallback(callback);
-				this.fetchMoreVotes(result.more,moreCallback);
+				this.fetchMoreStatements(result.more,moreCallback);
 			} else {
 				//we get here once we retrieved all of the votes. it is time to count and filter
-				callback(this.computeTopSentences());
+				this.findWinners(this.computeTopSentences(),callback);
 			}
 		},
 		addVotes: function(stmts) {
@@ -640,7 +640,7 @@ var AH;
 				}
 			}
 		},
-		fetchMoreVotes: function (url,moreCallback) {
+		fetchMoreStatements: function (url,moreCallback) {
 			var lrs = tincan.recordStores[0];
 			lrs.moreStatements({url:url,callback:moreCallback});
 		},
@@ -664,7 +664,7 @@ var AH;
 				}
 			}
 			counts.sort(); //order the numbers of votes
-			var winners = []; //to store the winners
+			var topIds = []; //to store the top statement ids
 			for(var i = 0; i < 5; i++) {
 				var nextCount = counts.pop(); //get the next higher number of votes
 				if(typeof nextCount === 'undefined') { //if there are very few different numbers of votes
@@ -672,14 +672,60 @@ var AH;
 				}
 				var ids = countMap[nextCount]; //get the ids of statements with that number of votes
 				for(var j = 0; j < ids.length; j++) { //add the respective sentences to the winners array.
-					winners.push(this.votes[ids[j]]);
-					if(winners.length >= 5){
-						return winners;
+					topIds.push(ids[j]);
+					if(topIds.length >= 5){
+						return topIds;
 					}
 				}
 			}
 			//we only reach this point if we didn't find 5 winners
-			return winners;
+			return topIds;
+		},
+		findWinners: function(stmtIds,callback) {
+			//we need to retrieve all the attribution statements in the room and filter them by verb and referred stmt id
+			this.winners = {};
+			for(var i = 0; i < stmtIds.length; i++) {
+				this.winners[stmtIds[i]] = this.votes[stmtIds[i]];
+			}
+			var cfg = { 
+				params: {
+					registration: this.registration,
+					verb: this.verbs.played,
+				},
+				callback: this.makeWinnerCallback(stmtIds,callback)
+			};
+			tincan.getStatements(cfg);
+		},
+		makeWinnerCallback: function(stmtIds,callback) {
+			var self = this;
+			var response = function(error,result) {
+				if(error !== null){
+					var winners = self.winners;
+					return callback(stmtIds.map(function(stmtid) {return winners[stmtid];})); //return what we have without authors
+				}
+				self.onFoundAuthors(result,stmtIds,callback);
+			};
+			return response;
+		},
+		onFoundAuthors: function(result,stmtIds, callback) {
+			this.addAuthors(stmtIds, result.statements);
+			if(result.hasOwnProperty("more") && result.more != ""){
+				//there are more results. Go fetch them
+				var moreCallback = this.makeWinnerCallback(stmtIds, callback);
+				this.fetchMoreStatements(result.more,moreCallback);
+			} else {
+				var winners = this.winners; 
+				//we get here once we retrieved all of the votes. it is time to count and filter
+				callback(stmtIds.map(function(stmtid) {return winners[stmtid];}));
+			}
+		},
+		addAuthors: function(stmtIds, stmts) {
+			for( var i=0; i< stmts.length; i++) {
+				var stmtId = stmts[i].target.id;
+				if(stmtIds.indexOf(stmtId) > -1){
+					this.winners[stmtId].author = stmts[i].actor;
+				}
+			}
 		},
 		throwJoinError: function (msg,err,obj) {
 			this.clearRegistration(this.getState());
