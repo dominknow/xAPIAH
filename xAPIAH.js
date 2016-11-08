@@ -229,14 +229,16 @@ var AH;
 				verb: this.verbs.joined,
 				object: this.room,
 				context: {
-					registration: this.registration
+					registration: this.registration,
+					contextActivities: null
 				}
 			};
 			var create = {
 				verb: this.verbs.created,
 				object: this.room,
 				context: {
-					registration: this.registration
+					registration: this.registration,
+					contextActivities: null
 				}
 			};
 			//send statements
@@ -304,7 +306,8 @@ var AH;
 				verb: this.verbs.joined,
 				object: this.room,
 				context: {
-					registration: this.registration
+					registration: this.registration,
+					contextActivities: null
 				}
 			};
 			var self = this;
@@ -439,7 +442,8 @@ var AH;
 					}
 				},
 				context: {
-					registration: this.registration
+					registration: this.registration,
+					contextActivities: null
 				},
 				result: {
 					response: sentence
@@ -482,7 +486,8 @@ var AH;
 					display: sentence
 				},
 				context: {
-					registration: this.registration
+					registration: this.registration,
+					contextActivities: null
 				},
 				result: {
 					response: msg
@@ -587,7 +592,8 @@ var AH;
 					display: sentence
 				},
 				context: {
-					registration: this.registration
+					registration: this.registration,
+					contextActivities: null
 				},
 				result: {
 					response: sentence
