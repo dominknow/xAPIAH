@@ -481,6 +481,9 @@ var AH;
 					id: stmtId,
 					display: sentence
 				},
+				context: {
+					registration: this.registration
+				},
 				result: {
 					response: msg
 				}
@@ -583,6 +586,9 @@ var AH;
 					id: stmtId,
 					display: sentence
 				},
+				context: {
+					registration: this.registration
+				},
 				result: {
 					response: sentence
 				}
@@ -617,7 +623,7 @@ var AH;
 		},
 		onFoundVotes: function (result, callback) {
 			this.addVotes(result.statements);
-			if(result.hasOwnProperty("more") && result.more != ""){
+			if(result.hasOwnProperty("more") && result.more ){
 				//there are more results. Go fetch them
 				var moreCallback = this.makeVotesCallback(callback);
 				this.fetchMoreStatements(result.more,moreCallback);
@@ -709,7 +715,7 @@ var AH;
 		},
 		onFoundAuthors: function(result,stmtIds, callback) {
 			this.addAuthors(stmtIds, result.statements);
-			if(result.hasOwnProperty("more") && result.more != ""){
+			if(result.hasOwnProperty("more") && result.more ){
 				//there are more results. Go fetch them
 				var moreCallback = this.makeWinnerCallback(stmtIds, callback);
 				this.fetchMoreStatements(result.more,moreCallback);
