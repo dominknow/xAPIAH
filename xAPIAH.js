@@ -393,8 +393,13 @@ AH.events = {
 				for(var j=0;j < result.statements.length; j++) {
 					var agent = result.statements[j].actor;
 					agent.icon = self.getAgentIcon(agent);
-					self.roomPlayers.agents.push(agent);
-					self.roomPlayers.ids.push(agent.mbox);
+					if(agent.mbox == tincan.actor.mbox){
+						self.roomPlayers.agents.unshift(agent);
+						self.roomPlayers.ids.unshift(agent.mbox);
+					} else {
+						self.roomPlayers.agents.push(agent);
+						self.roomPlayers.ids.push(agent.mbox);
+					}
 				}
 				self.afterJoin();
 			};
