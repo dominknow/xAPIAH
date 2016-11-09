@@ -57,7 +57,6 @@ var AH;
 		 * Used when exiting the lobby to start the game
 		 */
 		startGame: function(){
-			debugger;
 			this.api.stopPollingPlayers();
 		},
 		getAllPlayers: function() {
@@ -79,7 +78,8 @@ var AH;
 		 * @param {string} object - the noun selected as object
 		 */
 		submitSentence: function(subject,object,callback) {
-			this.api.sendSentence(subject,this.dealer.getQuestionVerb(this.state.turn),object,callback);
+			var objectId = this.dealer.getNounId(object);
+			this.api.sendSentence(subject,this.dealer.getQuestionVerb(this.state.turn),object,objectId,callback);
 			this.dealer.discardNouns([subject,object]);
 		},
 		/**
@@ -246,11 +246,10 @@ AH.events = {
 			this.player=1;
 			this.registration = this.getUUID();
 			this.room ={
-				objectType: "Agent",
-				name: "Room "+ this.registration,
-				account: {
-					homePage: "http://dominknow/expapi/room",
-					name: this.registration
+				objectType: "Activity",
+				id: "http://dominknow/expapi/room/"+this.registration,
+				definition: {
+					name: {"und": "Room " + this.registration}
 				}
 			};
 			//prepare statements to create and join the room
@@ -520,7 +519,7 @@ AH.events = {
 		 * @param verb is the value of the game verb in the question
 		 * @param object is the value of the second white card
 		 */
-		sendSentence: function(subject,verb,object,callback) {
+		sendSentence: function(subject,verb,object,objectid,callback) {
 			//we need to submit the sentence on its own statement, and then submit an statement indicating we submitted the sentence
 			var gameVerb = this.makeVerb(verb);
 			var sentence = [subject,verb,object].join(" ");
@@ -535,11 +534,10 @@ AH.events = {
 				},
 				verb: gameVerb,
 				object: {
-					objectType: "Agent",
-					name: object,
-					account: {
-						homePage: "http://dominknow/expapi/ah",
-						name: object
+					id: "http://dominknow/expapi/ah/" + objectid,
+					objectType: "Activity",
+					definition: {
+						name: { "en-US": object}
 					}
 				},
 				context: {
@@ -992,6 +990,9 @@ AH.events = {
 		},
 		getNounCards: function() {
 			return this.myNouns.slice(0);
+		},
+		getNounId: function(noun) {
+			return 1 + this.nouns.indexOf(noun);
 		},
 		initVerbs: function() {
 			this.verbs = [
