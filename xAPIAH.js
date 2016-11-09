@@ -23,7 +23,13 @@ var AH;
 					api: {
 						player: 0,
 						registration: null,
-						sentences: {}
+						sentences: {},
+						players: {
+							ids:[],
+							count: 0,
+							agents: [],
+							timerId: null
+						}
 					}
 				};
 			} else {
@@ -40,12 +46,23 @@ var AH;
 		 */
 		setupGame: function(callback,onError) {
 			var self = this;
-			var onSuccess = function() {
+			var onSuccess = function(players) {
 				self.dealer.setupGame();
 				self.state.turn = 1;
-				callback();
+				callback(players);
 			};
 			this.api.joinAH(onSuccess, onError);
+		},
+		/**
+		 * Used when exiting the lobby to start the game
+		 */
+		startGame: function(){
+			debugger;
+			this.api.stopPollingPlayers();
+		},
+		getAllPlayers: function() {
+			this.getState();
+			return this.state.api.players.agents;
 		},
 		/**
 		 * Returns the verb and noun cards that can be used
@@ -103,6 +120,10 @@ var AH;
 		}
 	};
 }());
+AH.events = {
+	userJoined: "AH_USER_JOINED",
+	newSentence: "AH_NEW_SENTENCE",
+};
 (function() {
 	"use strict";
 	/*
@@ -114,6 +135,12 @@ var AH;
 		this.mySubmittedSentences = {};
 		this.player = 0;
 		this.room = null;
+		this.roomPlayers = {
+				ids:[],
+				count: 0,
+				agents: [],
+				timerId: null
+			};
 		this.registration = null;
 		this.createStmtId = null;
 		this.joinedStmtId = null;
@@ -152,6 +179,7 @@ var AH;
 		clearRegistration: function(apiState) {
 			this.player = apiState.player;
 			this.room = null;
+			this.roomPlayers = apiState.players;
 			this.registration = apiState.registration;
 			this.createStmtId = null;
 			this.joinedStmtId = null;
@@ -160,7 +188,8 @@ var AH;
 			var state = {
 				player: this.player,
 				registration: this.registration,
-				sentences: JSON.parse(JSON.stringify(this.mySubmittedSentences))
+				sentences: JSON.parse(JSON.stringify(this.mySubmittedSentences)),
+				players: JSON.parse(JSON.stringify(this.roomPlayers))
 			};
 			return state;
 		},
@@ -356,10 +385,82 @@ var AH;
 			this.endJoin();
 		},
 		endJoin: function() {
+			var self = this;
+			var setRoomPlayers = function(err, result) {
+				if(err !== null){
+					return self.throwJoinError("Cannot get players that joined a room: ", err, result);
+				}
+				self.roomPlayers.count = result.statements.length;
+				for(var j=0;j < result.statements.length; j++) {
+					var agent = result.statements[j].actor;
+					agent.icon = self.getAgentIcon(agent);
+					self.roomPlayers.agents.push(agent);
+					self.roomPlayers.ids.push(agent.mbox);
+				}
+				self.afterJoin();
+			};
+			this.getPlayersInRoom(setRoomPlayers);
+		},
+		afterJoin: function() {
 			if(typeof this.doAfterJoin === "function"){
 				var callback = this.doAfterJoin;
 				this.doAfterJoin=null;
-				callback();
+				callback(this.roomPlayers.agents);
+			} else {
+				//triger the user joined event for each player in the room
+				for(var i=0; i < this.roomPlayers.count; i++){
+					this.triggerUserJoinedEvent(this.roomPlayers.agents[i]);
+				}
+			}
+			//last keep polling for new players in the room
+			if(this.roomPlayers.count > 3){
+				return;
+			}
+			var self = this;
+			var pollRoomPlayersCallback = function() {
+				self.pollRoomPlayers();
+			}
+			this.roomPlayers.timerId = setInterval(pollRoomPlayersCallback,1000);
+		},
+		getAgentIcon: function(agent) {
+			var email = agent.mbox.replace("mailto:","");
+			return gravatar(email, {size:80,rating:"pg", backup:"identicon"});
+		},
+		triggerUserJoinedEvent: function(agent){
+			var event = new CustomEvent(AH.events.userJoined,{
+				detail: agent,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event);
+		},
+		pollRoomPlayers: function() {
+			var self = this;
+			var findRoomPlayers = function(err, result) {
+				if(err !== null){
+					return self.throwJoinError("Cannot get players that joined a room: ", err, result);
+				}
+				if(self.roomPlayers.count >= result.statements.length) {
+					return;
+				}
+				self.roomPlayers.count = result.statements.length;
+				for(var j=0;j < result.statements.length; j++) {
+					var agent = result.statements[j].actor;
+					if(self.roomPlayers.ids.indexOf(agent.mbox) < 0) {
+						//we found a new player, we need to add her and trigger an event
+						agent.icon = self.getAgentIcon(agent);
+						self.roomPlayers.agents.push(agent);
+						self.roomPlayers.ids.push(agent.mbox);
+						self.triggerUserJoinedEvent(agent);
+					}
+				}
+			};
+			this.getPlayersInRoom(findRoomPlayers);
+		},
+		stopPollingPlayers: function() {
+			if(this.roomPlayers.timerId) {
+				clearInterval(this.roomPlayers.timerId);
+				this.roomPlayers.timerId = null;
 			}
 		},
 		getNumberOfPlayersInRoom: function(callback) {
@@ -827,7 +928,7 @@ var AH;
             }
             msg = "[warning] getStatements: No LRSs added yet (statements not read) ";
             tincan.log(msg);
-        },
+        }
 	};
 }());
 (function() {
