@@ -576,7 +576,8 @@ AH.events = {
 			this.attributeSentence(stmtId,sentence);
 		},
 		attributeSentence: function(stmtId, sentence) {
-			var msg = "Player " + this.player + " played '" + sentence + "'";
+			var player = tincan.actor.name || ("Player " + this.player);
+			var msg = player + " played '" + sentence + "'";
 			var data = {
 				verb: this.verbs.played,
 				object: {
