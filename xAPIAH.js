@@ -88,7 +88,7 @@ var AH;
 		 * @param {AH~foundSentencesCallback} callback - the function to call when we are done, or get an error
 		 */
 		getSubmittedSentences: function(callback) {
-			this.api.fetchSentencesByVerb(this.dealer.getQuestionVerb(this.state.turn),callback);
+			this.api.startPollingSentencesByVerb(this.dealer.getQuestionVerb(this.state.turn),callback);
 		},
 		/**
 		 * method used to submit a vote
@@ -123,6 +123,7 @@ var AH;
 AH.events = {
 	userJoined: "AH_USER_JOINED",
 	newSentence: "AH_NEW_SENTENCE",
+	readyToVote: "AH_CAN_VOTE"
 };
 (function() {
 	"use strict";
@@ -146,8 +147,9 @@ AH.events = {
 		this.joinedStmtId = null;
 		this.doAfterJoin = null;
 		this.doAfterJoinError = null;
-		this.fetchStart = null;
+		this.fetchEnd = null;
 		this.fetchCallback = null;
+		this.foundSentenceIds = [];
 		this.votes = {};
 		this.verbs = {
 				created: {
@@ -607,20 +609,43 @@ AH.events = {
 		 *  @param string verb the game verb we need to fetch for voting
 		 *  @param function callback the function to call when we are done, or get an error
 		 */
-		fetchSentencesByVerb: function(verb,callback) {
-			//we want to retrieve at least 4 responses, but we'll wait up to a minute if we get less.
-			this.fetchCallback = callback || this.emptyCallback;
-			var fetchStart = new Date();
-			this.fetchStart = fetchStart.getTime();
-			this.findSentencesByVerb(this.makeVerb(verb));
+		startPollingSentencesByVerb: function(verb,callback) {
+			var verbObj = this.makeVerb(verb);
+			this.foundSentenceIds = [];
+			//we already know which sentence we submitted, so we can add it
+			var mySentence = {
+					id: this.mySubmittedSentences[verb].id,
+					sentence: this.mySubmittedSentences[verb].sentence,
+					agent: this.roomPlayers.agents[0],
+					countdown: 30
+			};
+			this.fireFoundSentenceEvent(mySentence);
+			this.foundSentenceIds.push(mySentence.id);
+			//now poll for other sentences in the room
+			this.fetchEnd = 29000 + (new Date().getTime());
+			var self = this;
+			var pollSentences = function(){
+				self.findSentencesByVerb(verbObj);
+			};
+			this.pollSentencesTimerId = setInterval(pollSentences,1000);
+			if(typeof callback === "function"){
+				callback(this.pollSentencesTimerId);
+			}
+		},
+		fireFoundSentenceEvent: function(sentence){
+			var event = new CustomEvent(AH.events.newSentence,{
+				detail: sentence,
+				bubbles: true,
+				cancelable: true
+			});
+			document.dispatchEvent(event);
 		},
 		findSentencesByVerb: function(verbObj) {
 			var self = this;
 			var myCallback = function(error, result) {
 				if(error !== null){
-					onError = self.fetchCallback;
-					self.fetchCallback = null;
-					return onError({err: self.formatError("Cannot fetch sentences by all players in the room: ", error, result)});
+					clearInterval(self.pollSentencesTimerId);
+					return self.throwError("Cannot fetch sentences by all players in the room: ", error, result);
 				}
 				self.onSentencesFound(verbObj,result);
 			};
@@ -634,43 +659,54 @@ AH.events = {
 			tincan.getStatements(cfg);
 		},
 		onSentencesFound: function(verb,result) {
-			result.statements = this.filterStatementsByVerb(verb,result.statements);
-			if (result.statements.length < 4){
-				//if we have not found at least 4 answers
-				var now = new Date().getTime();
-				//var maxWait = 60000;
-				var maxWait = 4000;
-				if( now - this.fetchStart < maxWait){
-					//if we have not waited for up to a minute
-					//try again in 5 seconds.
-					var self = this;
-					var tid = setTimeout(
-						function(inst) {
-							inst.findSentencesByVerb(verb);
-						},
-						5000,
-						self
-					);
-					return;
+			var attribution = this.filterStatementsByVerb(this.verbs.played, result.statements);
+			if(attribution.length > this.foundSentenceIds.length){
+				//got new sentences, figure out which one and fire events
+				var statements = this.filterStatementsByVerb(verb,result.statements);
+				this.detectNewSentences(attribution,statements);
+			}
+			var now = new Date().getTime();
+			if (this.foundSentenceIds.length >= this.roomPlayers.count || now >= this.fetchEnd){
+				//if we have found one sentence per player in the room or ran for too long
+				clearInterval(this.pollSentencesTimerId); //stop polling
+				var event = new CustomEvent(AH.events.readyToVote,{
+					detail: true,
+					bubbles: true,
+					cancelable: true
+				});
+				document.dispatchEvent(event);
+			}
+		},
+		detectNewSentences: function(attribution, statements) {
+			for(var i = 0; i< attribution.length; i++){
+				var attrib = attribution[i];
+				var stmtId = attrib.target.id;
+				if(this.foundSentenceIds.indexOf(stmtId) >-1) {
+					//this sentence is already reported
+					continue;
+				}
+				//we've found a new sentence
+				var author = this.findPlayerByActor(attrib.actor);
+				var sentence = this.extractSentenceByStmtId(statements,stmtId);
+				var timeLeft = this.fetchEnd - (new Date().getTime());
+				timeLeft = (timeLeft - (timeLeft % 1000))/1000;
+				var payload = {
+					id: stmtId,
+					sentence: sentence,
+					agent: author,
+					countdown: timeLeft
+				};
+				this.fireFoundSentenceEvent(payload);
+				this.foundSentenceIds.push(stmtId);
+			}
+		},
+		extractSentenceByStmtId: function(statements, id){
+			for(var i = 0; i < statements.length; i++) {
+				if(statements[i].id == id){
+					return statements[i].result.response;
 				}
 			}
-			//we reach this point when we found at least 4 answers or have retried for up to a minute
-			var callback = this.fetchCallback;
-			this.fetchCallback = null;
-			callback(this.formatFoundSentences(verb.id,result.statements));
-		},
-		formatFoundSentences: function (verbId, stmts) {
-			var found = [];
-			for( var i=0; i< stmts.length; i++) {
-				found.push({
-					id: stmts[i].id,
-					sentence: stmts[i].result.response
-				});
-			}
-			return {
-				myId: this.mySubmittedSentences[this.extractSimpleVerb(verbId)].id,
-				sentences: found,
-			};
+			return "Sentence not found";
 		},
 		filterStatementsByVerb: function (verb,statements) {
 			var checkVerb = function (stmt) {
@@ -865,6 +901,25 @@ AH.events = {
 			callback = this.doAfterJoinError;
 			this.doAfterJoinError=null;
 			callback();
+		},
+		/**
+		 * Returns the player agent object for a sentence actor
+		 * if the actor is not a player, we add it
+		 */
+		findPlayerByActor: function(actor) {
+			var mbox = actor.mbox;
+			if(this.roomPlayers.ids.indexOf(mbox) < 0){
+				//this is a player we didn't know about
+				actor.icon = this.getAgentIcon(actor);
+				this.roomPlayers.ids.push(mbox);
+				this.roomPlayers.agents.push(actor);
+				return actor;
+			}
+			for(var i=0; i < this.roomPlayers.agents.length; i++){
+				if(this.roomPlayers.agents[i].mbox == mbox){
+					return this.roomPlayers.agents[i];
+				}
+			}
 		},
 		emptyCallback: function() {
 			//used to make sure all xapi calls are asynchronous when we don't actually need a callback
