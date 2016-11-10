@@ -97,7 +97,10 @@ var AH;
 		 * @param {string} sentence - the string representation of the sentence (as received by AH~foundSentencesCallback)
 		 */
 		submitVote: function(stmtId, sentence) {
-			this.api.submitVote(stmtId,sentence);
+			//A user can submit a null vote if they have nothing to vote on except for their own sentence (which is not allowed). This progresses the game while awarding no vote points from the submitted player for that turn
+			if(stmtId){
+				this.api.submitVote(stmtId,sentence);
+			}
 			this.state.turn++; //this ends the game turn
 		},
 		/**
@@ -876,7 +879,7 @@ AH.events = {
 			for( var i=0; i< stmts.length; i++) {
 				var stmtId = stmts[i].target.id;
 				if(stmtIds.indexOf(stmtId) > -1){
-					this.winners[stmtId].author = stmts[i].actor;
+					this.winners[stmtId].author = this.findPlayerByActor(stmts[i].actor);
 				}
 			}
 		},
