@@ -58,6 +58,7 @@ var AH;
 		 */
 		startGame: function(){
 			this.api.stopPollingPlayers();
+			this.api.checkAndCloseRoom();
 		},
 		getAllPlayers: function() {
 			this.getState();
@@ -138,6 +139,7 @@ AH.events = {
 		this.getRoomAttempts = 0;
 		this.mySubmittedSentences = {};
 		this.player = 0;
+		this.openRooms = [];
 		this.room = null;
 		this.roomPlayers = {
 				ids:[],
@@ -183,6 +185,7 @@ AH.events = {
 		},
 		clearRegistration: function(apiState) {
 			this.player = apiState.player;
+			this.openRooms = [];
 			this.room = null;
 			this.roomPlayers = apiState.players;
 			this.registration = apiState.registration;
@@ -205,6 +208,7 @@ AH.events = {
 		 * @param onError function to call when there is an error joining a room 
 		 */
 		joinAH: function(callback,onError) {
+			tincan.recordStores[0].alertOnRequestFailure = false; //prevents http errors related to tincan from blowing on your face.
 			this.clearRegistration(this.getState());
 			this.doAfterJoin=callback;
 			this.doAfterJoinError=onError;
@@ -237,15 +241,33 @@ AH.events = {
 			if(err !== null) {
 				return this.throwJoinError("Error looking up an open room: ",err,res);
 			}
-			res.statements = this.filterStatementsByVerb(this.verbs.created, res.statements);
-			if(res.statements.length == 0) {
-				return this.createRoom();
+			this.addOpenRooms(this.filterStatementsByVerb(this.verbs.created, res.statements));
+			if(res.hasOwnProperty("more") && res.more) {
+				var self = this;
+				var moreCallback = function (err,res) {
+					self.onOpenRoomResponse(err,res);
+				};
+				this.fetchMoreStatements(res.more,moreCallback);
+			} else {
+				if(this.openRooms.length == 0) {
+					return this.createRoom();
+				}
+				//pick the first open room
+				this.room = this.openRooms[0].room;
+				this.createStmtId = this.openRooms[0].createStmtId;
+				this.registration = this.openRooms[0].registration;
+				this.findSpotOnRoom();
 			}
-			//pick the first open room, the response should have only one anyway
-			this.room = JSON.parse(res.statements[0].originalJSON).object;
-			this.createStmtId = res.statements[0].id;
-			this.registration = res.statements[0].context.registration;
-			this.findSpotOnRoom();
+		},
+		addOpenRooms: function(statements) {
+			for(var i=0;i<statements.length;i++){
+				var room = {
+					room: JSON.parse(statements[i].originalJSON).object,
+					createStmtId: statements[i].id,
+					registration: statements[i].context.registration
+				};
+				this.openRooms.push(room);
+			}
 		},
 		createRoom: function() {
 			this.player=1;
@@ -433,7 +455,7 @@ AH.events = {
 		},
 		getAgentIcon: function(agent) {
 			var email = agent.mbox.replace("mailto:","");
-			return gravatar(email, {size:80,rating:"pg", backup:"identicon"});
+			return gravatar(email, {size:64,rating:"pg", backup:"identicon"});
 		},
 		triggerUserJoinedEvent: function(agent){
 			var event = new CustomEvent(AH.events.userJoined,{
