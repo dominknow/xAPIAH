@@ -284,14 +284,7 @@ AH.events = {
                 };
                 this.fetchMoreStatements(res.more, moreCallback);
             } else {
-                if (this.openRooms.length == 0) {
-                    return this.createRoom();
-                }
-                // pick the first open room
-                this.room = this.openRooms[0].room;
-                this.createStmtId = this.openRooms[0].createStmtId;
-                this.registration = this.openRooms[0].registration;
-                this.findSpotOnRoom();
+                this.checkOpenRooms();
             }
         },
         addOpenRooms : function (statements) {
@@ -306,6 +299,17 @@ AH.events = {
                 };
                 this.openRooms.push(room);
             }
+        },
+        checkOpenRooms: function() {
+            if (this.openRooms.length == 0) {
+                return this.createRoom();
+            }
+            // pick the first open room
+            var room = this.openRooms.shift();
+            this.room = room.room;
+            this.createStmtId = room.createStmtId;
+            this.registration = room.registration;
+            this.findSpotOnRoom();
         },
         createRoom : function () {
             this.player = 1;
@@ -363,12 +367,16 @@ AH.events = {
                 if (N > 3) {
                     // sorry, room is full
                     self.onRoomFull(); // try again
-                } else if (N > 2) {
-                    // room is almost full
-                    self.closeRoom(spot);
                 } else {
-                    // ready to join
-                    self.onSpotFound();
+                    if(self.playerAlreadyInRoom()){
+                        self.checkOpenRooms();
+                    } else if (N > 2) {
+                        // room is almost full
+                        self.closeRoom(spot);
+                    } else {
+                        // ready to join
+                        self.onSpotFound();
+                    }
                 }
             };
             this.getNumberOfPlayersInRoom(handler);
@@ -486,9 +494,7 @@ AH.events = {
                 callback(this.roomPlayers.agents);
             } else {
                 // triger the user joined event for each player in the room
-                for (var i = 0; i < this.roomPlayers.count; i++) {
-                    this.triggerUserJoinedEvent(this.roomPlayers.agents[i]);
-                }
+                this.triggerUserJoinedEvent();
             }
             // last keep polling for new players in the room
             if (this.roomPlayers.count > 3) {
@@ -509,9 +515,9 @@ AH.events = {
                 backup : "identicon"
             });
         },
-        triggerUserJoinedEvent : function (agent) {
+        triggerUserJoinedEvent : function () {
             var event = new CustomEvent(AH.events.userJoined, {
-                detail : agent,
+                detail : this.roomPlayers.agents,
                 bubbles : true,
                 cancelable : true
             });
@@ -535,9 +541,14 @@ AH.events = {
                         // we found a new player, we need to add her and trigger
                         // an event
                         agent.icon = self.getAgentIcon(agent);
-                        self.roomPlayers.agents.push(agent);
-                        self.roomPlayers.ids.push(agent.mbox);
-                        self.triggerUserJoinedEvent(agent);
+                        if (agent.mbox == tincan.actor.mbox) {
+                            self.roomPlayers.agents.unshift(agent);
+                            self.roomPlayers.ids.unshift(agent.mbox);
+                        } else {
+                            self.roomPlayers.agents.push(agent);
+                            self.roomPlayers.ids.push(agent.mbox);
+                        }
+                        self.triggerUserJoinedEvent();
                     }
                 }
             };
@@ -550,6 +561,7 @@ AH.events = {
             }
         },
         getNumberOfPlayersInRoom : function (callback) {
+            this.lastFoundPlayersInRoom = [];
             var self = this;
             var getNumber = function (err, result) {
                 if (err !== null) {
@@ -557,9 +569,18 @@ AH.events = {
                             "Cannot get players that joined a room: ", err,
                             result);
                 }
+                self.lastFoundPlayersInRoom = result.statements;
                 callback(result.statements.length);
             };
             this.getPlayersInRoom(getNumber);
+        },
+        playerAlreadyInRoom: function() {
+            for(var i=0; i < this.lastFoundPlayersInRoom.length; i++) {
+                if(tincan.actor.mbox == this.lastFoundPlayersInRoom[i].actor.mbox){
+                    return true;
+                }
+            }
+            return false;
         },
         getPlayersInRoom : function (callback) {
             var cfg = {
