@@ -241,6 +241,7 @@ AH.events = {
          * @param onError function to call when there is an error joining a room
          */
         joinAH : function (callback, onError) {
+            tincan.actor.mbox = tincan.actor.mbox.toLowerCase();
             // prevents http errors related to tincan from blowing on your face.
             tincan.recordStores[0].alertOnRequestFailure = false; 
             this.clearRegistration(this.getState());
